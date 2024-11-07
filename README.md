@@ -2,7 +2,6 @@
 # Echtzeit Bus-Haltestelleninformationen
 
 ![GitHub](https://img.shields.io/github/license/Luna-Schaetzle/IVB_API_Abuse)
-![GitHub](https://img.shields.io/github/repo-size/Luna-Schaetzle/IVB_API_Abuse)
 ![GitHub](https://img.shields.io/github/last-commit/Luna-Schaetzle/IVB_API_Abuse)
 ![GitHub](https://img.shields.io/github/languages/count/Luna-Schaetzle/IVB_API_Abuse)
 ![GitHub](https://img.shields.io/github/languages/top/Luna-Schaetzle/IVB_API_Abuse)
@@ -18,9 +17,9 @@
 - [Verwendung](#verwendung)
 - [Projektstruktur](#projektstruktur)
 - [API-Referenzen](#api-referenzen)
-- [Mitwirken](#mitwirken)
 - [Lizenz](#lizenz)
 - [Danksagungen](#danksagungen)
+- [Contact](#contact)
 
 ## Überblick
 
