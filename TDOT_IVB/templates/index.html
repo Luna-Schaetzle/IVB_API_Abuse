@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Haltestelle {{ stop_name }}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- jQuery (für AJAX) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Leaflet CSS & JS (für Kartenintegration, optional) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        body {
+            padding-top: 50px;
+            background-color: #f8f9fa;
+        }
+        .alert-section {
+            margin-bottom: 20px;
+        }
+        .bus-table {
+            margin-top: 20px;
+        }
+        .stop-selection {
+            margin-bottom: 30px;
+        }
+        /* Styling für die Uhr */
+        .clock {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #343a40;
+        }
+        /* Responsive Anpassungen */
+        @media (max-width: 576px) {
+            .clock {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- Header mit Titel und Uhr -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Haltestelle: {{ stop_name }}</h1>
+        <div class="clock" id="clock">--:--:--</div>
+    </div>
+
+    <!-- Haltestellenauswahl -->
+    <div class="stop-selection">
+        <form method="POST" action="{{ url_for('index') }}">
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label for="stop_id" class="col-form-label">Wähle eine Haltestelle:</label>
+                </div>
+                <div class="col-auto">
+                    <select class="form-select" id="stop_id" name="stop_id" required>
+                        <option value="" disabled {% if not selected_stop_id %}selected{% endif %}>-- Bitte wählen --</option>
+                        {% for stop in stops %}
+                            <option value="{{ stop.uid }}" {% if stop.uid == selected_stop_id %}selected{% endif %}>
+                                {{ stop.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Anzeigen</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if alerts %}
+    <div class="alert-section">
+        {% for alert in alerts %}
+            <div class="alert alert-warning" role="alert">
+                {{ alert }}
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="bus-table">
+        <h2>Ankommende Busse</h2>
+        {% if smartinfo %}
+            <table class="table table-striped table-bordered" id="bus-table">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Route</th>
+                        <th>Richtung</th>
+                        <th>Ankunft</th>
+                        <th>Platform</th>
+                        <th>Status</th>
+                        <th>Fahrzeugnummer</th>
+                        <th>Radständer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bus in smartinfo %}
+                    <tr>
+                        <td>{{ bus.route }}</td>
+                        <td>{{ bus.direction }}</td>
+                        <!-- Anwenden der CSS-Klasse auf die Zeitzelle -->
+                        <td class="{{ bus.color_class }}">{{ bus.time }}</td>
+                        <td>{{ bus.plabel }}</td>
+                        <td>{{ bus.stat }}</td>
+                        <td>{{ bus.pnum }}</td>
+                        <td>
+                            {% if bus.hasbikerack == 1 %}
+                                <span class="badge bg-success">Ja</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Nein</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Keine Busdaten verfügbar.</p>
+        {% endif %}
+    </div>
+
+    <!-- Karte (optional) -->
+    <div id="map" style="height: 400px; margin-top: 20px;"></div>
+</div>
+
+<!-- Bootstrap JS (optional) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    // Funktion zur Anzeige der aktuellen Uhrzeit
+    function updateClock() {
+        const now = new Date();
+        let hours = now.getHours();
+        let minutes = now.getMinutes();
+        let seconds = now.getSeconds();
+
+        // Voranstellen von Nullen bei einstelligen Zahlen
+        hours = hours < 10 ? '0' + hours : hours;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        seconds = seconds < 10 ? '0' + seconds : seconds;
+
+        const currentTime = hours + ':' + minutes + ':' + seconds;
+        document.getElementById('clock').textContent = currentTime;
+    }
+
+    // Aktualisiere die Uhr jede Sekunde
+    setInterval(updateClock, 1000);
+    // Initiale Anzeige der Uhr
+    updateClock();
+
+    $(document).ready(function(){
+        // Initialisiere die Karte
+        var map = L.map('map').setView([47.263813, 11.400267], 14); // Standard auf Hauptbahnhof
+
+        // Füge OpenStreetMap Tiles hinzu
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Funktion zum Aktualisieren der Karte
+        function updateMap(stops, stop_id, stop_name, smartinfo) {
+            // Entferne alle bisherigen Marker
+            map.eachLayer(function (layer) {
+                if (layer instanceof L.Marker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            // Finde die ausgewählte Haltestelle
+            var selected_stop = stops.find(s => s.uid === stop_id);
+            if(selected_stop){
+                // Setze die Kartenansicht auf die Haltestelle
+                map.setView([selected_stop.lat, selected_stop.lon], 14);
+
+                // Füge einen Marker für die Haltestelle hinzu
+                L.marker([selected_stop.lat, selected_stop.lon]).addTo(map)
+                    .bindPopup(`<b>${selected_stop.name}</b>`).openPopup();
+            }
+
+            // Füge Marker für die Busse hinzu
+            smartinfo.forEach(function(bus){
+                if(bus.latitude && bus.longitude && bus.latitude != 648000002 && bus.longitude != 648000002){
+                    // Skalieren der Koordinaten, falls notwendig
+                    var lat = bus.latitude / 10000000;
+                    var lon = bus.longitude / 10000000;
+                    L.marker([lat, lon], {
+                        rotationAngle: bus.bearing
+                    }).addTo(map)
+                        .bindPopup(`<b>Route ${bus.route}</b><br>Richtung: ${bus.direction}<br>Abfahrt: ${bus.time}`);
+                }
+            });
+        }
+
+        // Funktion zum Aktualisieren der Busdaten
+        function updateBusData() {
+            const stop_id = "{{ selected_stop_id }}";
+            $.ajax({
+                url: `/api/passage/${stop_id}`,
+                method: 'GET',
+                success: function(data) {
+                    const tbody = $('#bus-table tbody');
+                    tbody.empty(); // Leere die aktuelle Tabelle
+                    if(data.length > 0){
+                        data.forEach(function(bus){
+                            const bikerack = bus.hasbikerack == 1 ? 
+                                '<span class="badge bg-success">Ja</span>' : 
+                                '<span class="badge bg-secondary">Nein</span>';
+                            const row = `
+                                <tr>
+                                    <td>${bus.route}</td>
+                                    <td>${bus.direction}</td>
+                                    <td class="${bus.color_class}">${bus.time}</td>
+                                    <td>${bus.plabel}</td>
+                                    <td>${bus.stat}</td>
+                                    <td>${bus.pnum}</td>
+                                    <td>${bikerack}</td>
+                                </tr>
+                            `;
+                            tbody.append(row);
+                        });
+                    } else {
+                        tbody.append('<tr><td colspan="7">Keine Busdaten verfügbar.</td></tr>');
+                    }
+
+                    // Aktualisiere die Karte mit den neuen Daten
+                    const stops = {{ stops | tojson | safe }};
+                    const stop_id_js = "{{ selected_stop_id }}";
+                    const stop_name_js = "{{ stop_name }}";
+                    updateMap(stops, stop_id_js, stop_name_js, data);
+                },
+                error: function() {
+                    console.error('Fehler beim Abrufen der Busdaten.');
+                }
+            });
+        }
+
+        // Initialisiere die Busdaten und Karte
+        updateBusData();
+
+        // Aktualisiere die Busdaten alle 30 Sekunden
+        setInterval(updateBusData, 30000); // 30000 ms = 30 Sekunden
+    });
+</script>
+
+</body>
+</html>
